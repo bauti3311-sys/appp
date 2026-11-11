@@ -20,13 +20,41 @@ jobs:
         run: |
           npm install
           npm run build
-      - name: Generate Android Translucent Overlay Project & Build APK
+      - name: Configure Translucent Floating Window & Build APK
         run: |
           npm install @capacitor/core @capacitor/cli @capacitor/android
           npx cap init "Spotlight Next" "dev.bautista.spotlight" --web-dir dist || true
           npx cap add android || true
           npx cap sync android
-          sed -i 's/<application/<uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" \/>\n    <application/' android/app/src/main/AndroidManifest.xml
+
+          # 1. Permisos y tema transparente (NO Pantalla Completa) en AndroidManifest.xml
+          sed -i 's/<application/<uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" \/>\n    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" \/>\n    <application/' android/app/src/main/AndroidManifest.xml
+          sed -i 's/android:theme="@style\/AppTheme.NoActionBarLaunch"/android:theme="@android:style\/Theme.Translucent.NoTitleBar"/' android/app/src/main/AndroidManifest.xml
+
+          # 2. Hacer que el visor Web (WebView) de Android sea 100% transparente y flote
+          MAIN_ACT=$(find android/app/src/main/java -name "MainActivity.java" -o -name "MainActivity.kt" | head -n 1)
+          if [[ "$MAIN_ACT" == *.java ]]; then
+            cat << 'EOF' > "$MAIN_ACT"
+          package dev.bautista.spotlight;
+          import android.os.Bundle;
+          import android.graphics.Color;
+          import android.view.WindowManager;
+          import com.getcapacitor.BridgeActivity;
+
+          public class MainActivity extends BridgeActivity {
+              @Override
+              public void onCreate(Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
+                  getWindow().setBackgroundDrawableResource(android.R.color.transparent);
+                  getWindow().addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
+                  getWindow().setDimAmount(0.18f);
+                  getBridge().getWebView().setBackgroundColor(Color.TRANSPARENT);
+              }
+          }
+          EOF
+          fi
+
+          # 3. Resolver duplicados de Kotlin y compilar
           cd android
           echo "configurations.all { exclude group: 'org.jetbrains.kotlin', module: 'kotlin-stdlib-jdk7'; exclude group: 'org.jetbrains.kotlin', module: 'kotlin-stdlib-jdk8' }" >> app/build.gradle
           chmod +x gradlew
