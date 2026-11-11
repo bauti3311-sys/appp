@@ -1,0 +1,33 @@
+name: Build Spotlight Next Android Overlay APK
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+      - name: Install & Build Web Bundle
+        run: |
+          npm install
+          npm run build
+      - name: Generate Android Translucent Overlay Project & Build APK
+        run: |
+          npm install @capacitor/core @capacitor/cli @capacitor/android
+          npx cap add android || true
+          npx cap sync android
+          cd android && chmod +x gradlew && ./gradlew assembleDebug
+      - name: Upload Spotlight-Next-Overlay.apk
+        uses: actions/upload-artifact@v4
+        with:
+          name: Spotlight-Next-v3.0-Overlay-ARM64.apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk

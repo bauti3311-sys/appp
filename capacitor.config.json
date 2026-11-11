@@ -1,0 +1,10 @@
+{
+  "appId": "dev.bautista.spotlight",
+  "appName": "Spotlight Next",
+  "webDir": "dist",
+  "bundledWebRuntime": false,
+  "android": {
+    "backgroundColor": "#00000000",
+    "allowMixedContent": true
+  }
+}
