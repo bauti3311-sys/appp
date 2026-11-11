@@ -23,9 +23,14 @@ jobs:
       - name: Generate Android Translucent Overlay Project & Build APK
         run: |
           npm install @capacitor/core @capacitor/cli @capacitor/android
+          npx cap init "Spotlight Next" "dev.bautista.spotlight" --web-dir dist || true
           npx cap add android || true
           npx cap sync android
-          cd android && chmod +x gradlew && ./gradlew assembleDebug
+          sed -i 's/<application/<uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" \/>\n    <application/' android/app/src/main/AndroidManifest.xml
+          cd android
+          echo "configurations.all { exclude group: 'org.jetbrains.kotlin', module: 'kotlin-stdlib-jdk7'; exclude group: 'org.jetbrains.kotlin', module: 'kotlin-stdlib-jdk8' }" >> app/build.gradle
+          chmod +x gradlew
+          ./gradlew assembleDebug
       - name: Upload Spotlight-Next-Overlay.apk
         uses: actions/upload-artifact@v4
         with:
