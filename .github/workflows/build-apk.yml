@@ -16,31 +16,58 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: '21'
-      - name: Install & Build Web Bundle
+
+      - name: Force Transparent CSS in Web App
         run: |
           npm install
+          # Forzar fondo transparente en el index.html para borrar el rectángulo gris de pantalla completa
+          cat << 'EOF' >> index.html
+          <style>
+            html, body, #root, #app, main, [class*="bg-[#0"], [class*="min-h-screen"], [class*="h-screen"] {
+              background: transparent !important;
+              background-color: transparent !important;
+            }
+          </style>
+          EOF
           npm run build
-      - name: Configure Translucent Floating Window & Build APK
+
+      - name: Build True Translucent Android APK
         run: |
           npm install @capacitor/core @capacitor/cli @capacitor/android
           npx cap init "Spotlight Next" "dev.bautista.spotlight" --web-dir dist || true
           npx cap add android || true
           npx cap sync android
 
-          # 1. Permisos y tema transparente (NO Pantalla Completa) en AndroidManifest.xml
+          # 1. Inyectar permisos de superposición y tema Translucent nativo en el manifiesto
           sed -i 's/<application/<uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" \/>\n    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" \/>\n    <application/' android/app/src/main/AndroidManifest.xml
-          sed -i 's/android:theme="@style\/AppTheme.NoActionBarLaunch"/android:theme="@android:style\/Theme.Translucent.NoTitleBar"/' android/app/src/main/AndroidManifest.xml
+          sed -i 's/android:theme="[^"]*"/android:theme="@android:style\/Theme.Translucent.NoTitleBar"/g' android/app/src/main/AndroidManifest.xml
 
-          # 2. Hacer que el visor Web (WebView) de Android sea 100% transparente y flote
-          MAIN_ACT=$(find android/app/src/main/java -name "MainActivity.java" -o -name "MainActivity.kt" | head -n 1)
-          if [[ "$MAIN_ACT" == *.java ]]; then
-            cat << 'EOF' > "$MAIN_ACT"
+          # 2. Inyectar estilos translúcidos para asegurar que Android no dibuje fondo opaco
+          cat << 'EOF' > android/app/src/main/res/values/styles.xml
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <style name="AppTheme" parent="Theme.AppCompat.NoActionBar">
+                  <item name="android:windowIsTranslucent">true</item>
+                  <item name="android:windowBackground">@android:color/transparent</item>
+                  <item name="android:windowContentOverlay">@null</item>
+                  <item name="android:windowNoTitle">true</item>
+                  <item name="android:backgroundDimEnabled">true</item>
+                  <item name="android:backgroundDimAmount">0.18</item>
+              </style>
+              <style name="AppTheme.NoActionBar" parent="AppTheme" />
+              <style name="AppTheme.NoActionBarLaunch" parent="AppTheme" />
+          </resources>
+          EOF
+
+          # 3. Hacer transparente el WebView de Capacitor desde MainActivity
+          MAIN_JAVA=$(find android/app/src/main/java -name "MainActivity.java" | head -n 1)
+          if [ -n "$MAIN_JAVA" ]; then
+            cat << 'EOF' > "$MAIN_JAVA"
           package dev.bautista.spotlight;
           import android.os.Bundle;
           import android.graphics.Color;
           import android.view.WindowManager;
           import com.getcapacitor.BridgeActivity;
-
           public class MainActivity extends BridgeActivity {
               @Override
               public void onCreate(Bundle savedInstanceState) {
@@ -54,11 +81,12 @@ jobs:
           EOF
           fi
 
-          # 3. Resolver duplicados de Kotlin y compilar
+          # 4. Resolver duplicados de Kotlin y compilar el APK debug real
           cd android
           echo "configurations.all { exclude group: 'org.jetbrains.kotlin', module: 'kotlin-stdlib-jdk7'; exclude group: 'org.jetbrains.kotlin', module: 'kotlin-stdlib-jdk8' }" >> app/build.gradle
           chmod +x gradlew
           ./gradlew assembleDebug
+
       - name: Upload Spotlight-Next-Overlay.apk
         uses: actions/upload-artifact@v4
         with:
