@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import { 
-  Play, CheckCircle2, AlertCircle, ArrowUp, ArrowDown, 
-  Trash2, BookmarkPlus, X, Sun, Volume2, ExternalLink, Music2, Sliders 
+  Play, CheckCircle2, ArrowUp, ArrowDown, 
+  BookmarkPlus, X, Sun, Volume2, ExternalLink, Music2, Sliders 
 } from 'lucide-react';
-import { LocalPlanData, DeviceState, AppConfig } from '../types';
+import { LocalPlanData, DeviceState } from '../types';
+import { AndroidIntents } from '../lib/androidIntents';
 
 interface PlanReviewModalProps {
   plan: LocalPlanData;
@@ -59,7 +60,7 @@ export const PlanReviewModal: React.FC<PlanReviewModalProps> = ({
       );
 
       // Simulate execution time per step
-      await new Promise(r => setTimeout(r, 450));
+      await new Promise(r => setTimeout(r, 350));
 
       const step = stepItem.step;
       if (step.type === 'brightness') {
@@ -78,13 +79,8 @@ export const PlanReviewModal: React.FC<PlanReviewModalProps> = ({
         if (step.command === 'pause') onUpdateDevice({ isPlaying: false });
         if (step.command === 'play') onUpdateDevice({ isPlaying: true });
       } else if (step.type === 'open') {
-        onUpdateDevice({
-          openAppWindow: {
-            name: step.name,
-            id: step.name.toLowerCase().replace(/\s+/g, '-'),
-            icon: 'ExternalLink',
-          },
-        });
+        const cleanId = step.name.toLowerCase().trim();
+        AndroidIntents.launchAppById(cleanId, step.name);
       }
 
       // Mark step completed

@@ -1,10 +1,11 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
-  CornerUpLeft, Play, Pause, Search, Columns2, CheckCircle2,
-  Mic, Send, Copy, ExternalLink, Sparkles, Volume2, Radio
+  CornerUpLeft, Play, Pause, Columns2,
+  Send, Radio, ExternalLink
 } from 'lucide-react';
 import { AppConfig, DeviceState } from '../types';
 import { IosAppIcon, getAppBrand } from './IosAppIcon';
+import { AndroidIntents } from '../lib/androidIntents';
 
 interface InlineScopedSearchProps {
   appId: string;
@@ -52,29 +53,6 @@ export const InlineScopedSearch: React.FC<InlineScopedSearchProps> = ({
 
   const brand = getAppBrand(appId);
 
-  const playPreviewTone = (freq = 440) => {
-    try {
-      const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-      const ctx = new AudioCtx();
-      const now = ctx.currentTime;
-      const vol = Math.max(0.05, (deviceState.volume ?? 75) / 100) * 0.2;
-      [freq, freq * 1.25, freq * 1.5].forEach((f, idx) => {
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.type = idx === 0 ? 'sine' : 'triangle';
-        osc.frequency.setValueAtTime(f, now + idx * 0.07);
-        gain.gain.setValueAtTime(vol, now + idx * 0.07);
-        gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.07 + 0.35);
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        osc.start(now + idx * 0.07);
-        osc.stop(now + idx * 0.07 + 0.36);
-      });
-    } catch {
-      // ignore audio restrictions
-    }
-  };
-
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Escape') {
       e.preventDefault();
@@ -93,38 +71,26 @@ export const InlineScopedSearch: React.FC<InlineScopedSearchProps> = ({
 
   const handlePrimarySubmit = () => {
     if (appId === 'spotify') {
-      const q = subQuery.trim() || spotifyFilter;
-      const matched = SPOTIFY_QUICK_TRACKS.find(
-        t =>
-          t.title.toLowerCase().includes(q.toLowerCase()) ||
-          t.artist.toLowerCase().includes(q.toLowerCase())
-      ) || SPOTIFY_QUICK_TRACKS[0];
-
-      playPreviewTone(matched.freq);
-      onUpdateDevice({
-        isPlaying: true,
-        activeMediaTrack: {
-          title: subQuery.trim() ? `${subQuery.trim()} (${spotifyFilter})` : matched.title,
-          artist: matched.artist,
-          album: matched.album,
-        },
-      });
-      onShowToast(`🎵 Reproduciendo en Spotify: ${subQuery.trim() || matched.title}`);
+      const q = subQuery.trim();
+      AndroidIntents.openSpotify(q);
     } else if (appId === 'whatsapp') {
       if (waFilter === 'Sin Agendar (wa.me)') {
         const cleanPhone = subQuery.replace(/\D/g, '') || '5491145892103';
-        window.open(`https://wa.me/${cleanPhone}`, '_blank');
-        onShowToast(`Abriendo chat directo wa.me/${cleanPhone}`);
+        AndroidIntents.openWhatsApp({ phone: cleanPhone });
       } else if (waFilter === 'Enviar Alias') {
         const alias = config.paymentAlias || 'bauti.spotlight.mp';
-        navigator.clipboard?.writeText(alias);
-        onShowToast(`💳 Alias «${alias}» copiado y enviado a ${waTarget}`);
+        const cbu = config.paymentCbu || '0000003100084920194821';
+        navigator.clipboard?.writeText(alias).catch(() => {});
+        AndroidIntents.openWhatsApp({
+          text: `Te paso mi alias para transferir:\nAlias: ${alias}\nCVU: ${cbu}`,
+        });
       } else {
-        onShowToast(`💬 WhatsApp enviado a ${waTarget}: "${subQuery || '¡Hola! Ya salgo para allá'}"`);
-        setSubQuery('');
+        AndroidIntents.openWhatsApp({
+          text: subQuery.trim() || `¡Hola ${waTarget}!`,
+        });
       }
     } else {
-      onOpenInspector();
+      AndroidIntents.launchAppById(appId, subQuery);
     }
   };
 
@@ -253,16 +219,7 @@ export const InlineScopedSearch: React.FC<InlineScopedSearchProps> = ({
                   <button
                     key={track.id}
                     onClick={() => {
-                      playPreviewTone(track.freq);
-                      onUpdateDevice({
-                        isPlaying: true,
-                        activeMediaTrack: {
-                          title: track.title,
-                          artist: track.artist,
-                          album: track.album,
-                        },
-                      });
-                      onShowToast(`🎵 Reproduciendo: ${track.title} — ${track.artist}`);
+                      AndroidIntents.openSpotify(`${track.title} ${track.artist}`);
                     }}
                     className="w-full flex items-center justify-between px-3 py-2 rounded-xl bg-black/30 hover:bg-emerald-500/15 border border-white/5 hover:border-emerald-500/30 transition-all cursor-pointer text-left group"
                   >
@@ -274,7 +231,7 @@ export const InlineScopedSearch: React.FC<InlineScopedSearchProps> = ({
                       </div>
                     </div>
                     <span className="text-[10px] font-mono text-emerald-400 opacity-80 group-hover:opacity-100">
-                      Reproducir
+                      Abrir en Spotify
                     </span>
                   </button>
                 ))}
@@ -292,14 +249,11 @@ export const InlineScopedSearch: React.FC<InlineScopedSearchProps> = ({
                 </button>
 
                 <button
-                  onClick={() => {
-                    onUpdateDevice({ isPlaying: !deviceState.isPlaying });
-                    playPreviewTone(440);
-                  }}
+                  onClick={() => AndroidIntents.openSpotify()}
                   className="flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-white/[0.06] hover:bg-white/[0.12] text-neutral-300 text-xs font-medium transition-colors cursor-pointer border border-white/10"
                 >
-                  {deviceState.isPlaying ? <Pause className="w-3.5 h-3.5 text-emerald-400" /> : <Play className="w-3.5 h-3.5 text-emerald-400" />}
-                  <span>{deviceState.isPlaying ? 'Pausar' : 'Reproducir'}</span>
+                  <ExternalLink className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Abrir App Spotify</span>
                 </button>
               </div>
 

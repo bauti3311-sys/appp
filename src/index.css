@@ -6,6 +6,13 @@
     --mouse-x: 50%;
     --mouse-y: 0%;
   }
+
+  html,
+  body,
+  #root {
+    background: transparent !important;
+    background-color: transparent !important;
+  }
 }
 
 /* E12: Fuentes Tipográficas Intercambiables */

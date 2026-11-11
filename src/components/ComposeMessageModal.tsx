@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Send, MessageSquare, X, Check, ExternalLink } from 'lucide-react';
+import { Send, MessageSquare, X, Check } from 'lucide-react';
+import { AndroidIntents } from '../lib/androidIntents';
 
 interface ComposeMessageModalProps {
   channel: 'whatsapp' | 'whatsapp_business' | 'telegram' | 'email' | 'sms';
@@ -26,19 +27,23 @@ export const ComposeMessageModal: React.FC<ComposeMessageModalProps> = ({
 
   const handleSend = () => {
     setStatus('sent');
-    // Open web intent or simulate send
-    const encoded = encodeURIComponent(text);
+    const cleanPhone = /^\+?\d{6,15}$/.test(target.replace(/[\s()-]/g, ''))
+      ? target.replace(/[^\d]/g, '')
+      : undefined;
+
     if (channel === 'whatsapp' || channel === 'whatsapp_business') {
-      window.open(`https://api.whatsapp.com/send?text=${encoded}`, '_blank');
+      AndroidIntents.openWhatsApp({ phone: cleanPhone, text });
     } else if (channel === 'telegram') {
-      window.open(`https://t.me/share/url?url=&text=${encoded}`, '_blank');
+      AndroidIntents.openTelegram(text);
     } else if (channel === 'email') {
-      window.open(`mailto:${target}?body=${encoded}`, '_blank');
+      AndroidIntents.openGmail({ to: target, body: text });
+    } else if (channel === 'sms') {
+      AndroidIntents.triggerUri(`sms:${cleanPhone || ''}?body=${encodeURIComponent(text)}`);
     }
     onSent(target, text);
     setTimeout(() => {
       onClose();
-    }, 1200);
+    }, 600);
   };
 
   const getChannelName = () => {

@@ -6,6 +6,7 @@ import {
 import { PreferencesStore, INITIAL_DEVICE_STATE } from './lib/preferences';
 import { SearchEngine } from './lib/searchEngine';
 import { OnlineTools } from './lib/onlineTools';
+import { AndroidIntents } from './lib/androidIntents';
 import { SpotlightBar } from './components/SpotlightBar';
 import { ResultItem } from './components/ResultItem';
 import { ActionPanel } from './components/ActionPanel';
@@ -378,51 +379,20 @@ export const App: React.FC = () => {
           showToast('Ajustes de Spotlight abiertos');
           break;
         }
-        // When in standalone bar mode ('suggestions'), Spotify & WhatsApp open directly inside the bar
-        // (matching Screenshot_20261107_170643_ChatGPT_9c483b40.jpg), or in Split Inspector if already in split mode!
-        if ((act.appId === 'spotify' || act.appId === 'whatsapp') && viewMode === 'suggestions' && !query.trim()) {
-          setInlineScopedApp(act.appId);
-          break;
-        }
-        const inspectorNativeApps = [
-          'spotify',
-          'whatsapp',
-          'telegram',
-          'youtube',
-          'gmail',
-          'maps',
-          'finanzas',
-          'camara',
-          'control',
-          'movies',
-          'sticky',
-          'translator',
-          'clock',
-          'emojis',
-          'timer',
-          'qr',
-          'clipboard',
-          'files',
-          'calc',
-        ];
-        if (inspectorNativeApps.includes(act.appId)) {
+        if (act.appId === 'clipboard' || act.appId === 'emojis') {
           setInlineScopedApp(null);
           setViewMode('split_inspector');
           if (deviceModel === 'moto_g86') setMobileInspectorOpen(true);
-          showToast(`Abriendo ${act.appName} en el Inspector`);
           break;
         }
-        if (act.url) {
-          window.open(act.url, '_blank');
-        } else {
-          handleUpdateDevice({
-            openAppWindow: {
-              name: act.appName,
-              id: act.appId,
-              icon: result.iconName || 'ExternalLink',
-            },
-          });
+        if (act.appId === 'sticky' || act.appId === 'notes') {
+          setActiveNote({ title: '', content: '' });
+          setIsNotesModalOpen(true);
+          break;
         }
+        // Directly fire real Android URL schemes & Intents (intent://..., whatsapp://send, spotify://, https://www.google.com/search?q=)
+        // via window.location.href so the native Android phone opens the real installed application
+        AndroidIntents.launchAppById(act.appId, query, act.url);
         break;
       }
 
@@ -449,13 +419,25 @@ export const App: React.FC = () => {
         setIsFocusModalOpen(true);
         break;
 
-      case 'compose_message':
-        setComposeData({
-          channel: act.channel,
-          target: act.target,
-          text: act.text || '',
-        });
+      case 'compose_message': {
+        const cleanPhone = /^\+?\d{6,15}$/.test((act.target || '').replace(/[\s()-]/g, ''))
+          ? act.target.replace(/[^\d]/g, '')
+          : undefined;
+        if (act.channel === 'whatsapp' || act.channel === 'whatsapp_business') {
+          AndroidIntents.openWhatsApp({ phone: cleanPhone, text: act.text || '' });
+        } else if (act.channel === 'telegram') {
+          AndroidIntents.openTelegram(act.text || '');
+        } else if (act.channel === 'email') {
+          AndroidIntents.openGmail({ to: act.target, body: act.text || '' });
+        } else {
+          setComposeData({
+            channel: act.channel,
+            target: act.target,
+            text: act.text || '',
+          });
+        }
         break;
+      }
 
       case 'new_note':
         setActiveNote({ title: '', content: '' });
@@ -489,7 +471,7 @@ export const App: React.FC = () => {
           const card = await OnlineTools.lookup(act.lookupType, act.query);
           setInfoCardData(card);
         } catch {
-          showToast('Error al consultar información en línea');
+          AndroidIntents.searchGoogle(act.query);
         }
         break;
       }
@@ -499,21 +481,25 @@ export const App: React.FC = () => {
         if (cmd.startsWith('volume:')) {
           const val = parseInt(cmd.replace('volume:', ''), 10);
           handleUpdateDevice({ volume: val, isMuted: val === 0 });
-          showToast(`Volumen al ${val}%`);
+          AndroidIntents.triggerDeviceCommand(cmd);
         } else if (cmd.startsWith('brightness:')) {
           const val = parseInt(cmd.replace('brightness:', ''), 10);
           handleUpdateDevice({ brightness: val });
-          showToast(`Brillo al ${val}%`);
+          AndroidIntents.triggerDeviceCommand(cmd);
         } else if (cmd === 'volume_up') {
           const nextVal = Math.min(100, deviceState.volume + 10);
           handleUpdateDevice({ volume: nextVal, isMuted: false });
+          AndroidIntents.triggerDeviceCommand(cmd);
         } else if (cmd === 'volume_down') {
           const nextVal = Math.max(0, deviceState.volume - 10);
           handleUpdateDevice({ volume: nextVal, isMuted: nextVal === 0 });
+          AndroidIntents.triggerDeviceCommand(cmd);
         } else if (cmd === 'mute') {
           handleUpdateDevice({ isMuted: true });
+          AndroidIntents.triggerDeviceCommand(cmd);
         } else if (cmd === 'unmute') {
           handleUpdateDevice({ isMuted: false });
+          AndroidIntents.triggerDeviceCommand(cmd);
         } else if (cmd === 'pause' || cmd === 'play_pause') {
           handleUpdateDevice({ isPlaying: !deviceState.isPlaying });
           showToast(deviceState.isPlaying ? 'Pausado' : 'Reproduciendo');
@@ -523,6 +509,8 @@ export const App: React.FC = () => {
         } else if (cmd === 'apagar linterna') {
           handleUpdateDevice({ flashlightEnabled: false });
           showToast('🔦 Linterna Flash apagada');
+        } else {
+          AndroidIntents.triggerDeviceCommand(cmd);
         }
         break;
       }
@@ -626,10 +614,12 @@ export const App: React.FC = () => {
         }
       }}
       style={{
+        background: 'transparent',
+        backgroundColor: 'transparent',
         fontSize: `${textScale * 100}%`,
         filter: `brightness(${Math.max(0.45, (deviceState.brightness ?? 85) / 100 + 0.15)})`,
       }}
-      className={`relative min-h-screen w-full flex flex-col items-center justify-start ${
+      className={`relative min-h-screen w-full bg-transparent flex flex-col items-center justify-start ${
         isSettingsPageOpen ? 'pt-12 md:pt-14' : 'pt-16 sm:pt-24 md:pt-28'
       } p-2 sm:p-4 text-neutral-100 overflow-hidden transition-all duration-300`}
     >
@@ -640,7 +630,7 @@ export const App: React.FC = () => {
 
       {/* ============================================================
           ON-DEMAND OS SETTINGS SCREEN:
-          CLOSED BY DEFAULT ("yo la invoco y aparece solo la barra, después bueno si yo toco ajustes q se abra")
+          CLOSED BY DEFAULT ("Que la app inicie SIEMPRE directamente en el modo 'Vista Overlay Pura (Sin Fondo)' con background: transparent")
       ============================================================ */}
       {isSettingsPageOpen && (
         <OsSettingsBackground
@@ -681,20 +671,7 @@ export const App: React.FC = () => {
           onCloseSettings={() => {
             setIsSettingsPageOpen(false);
             setIsSpotlightHidden(false);
-            showToast('Ajustes cerrados · Modo Barra Nativa');
-          }}
-        />
-      )}
-
-      {/* Very Subtle Ambient Glow behind the floating bar */}
-      {accentIntensity !== 'minimal' && isSpotlightVisible && (
-        <div
-          className="fixed inset-0 pointer-events-none transition-all duration-700 ease-out z-0"
-          style={{
-            background: `radial-gradient(600px circle at 50% 24%, ${activeBrand.primaryColor}${
-              accentIntensity === 'vibrant' ? '18' : '0a'
-            }, transparent 70%)`,
-            opacity: deviceState.brightness / 100,
+            showToast('Ajustes cerrados · Modo Overlay Puro (Sin Fondo)');
           }}
         />
       )}
